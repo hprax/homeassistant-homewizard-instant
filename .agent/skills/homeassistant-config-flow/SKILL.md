@@ -202,13 +202,14 @@ Config flow forms are translated via `strings.json`:
   "config": {
     "step": {
       "user": {
-        "title": "Set up HomeWizard P1 Meter",
-        "description": "Connect to your HomeWizard device.",
+        "title": "Set up Marstek",
+        "description": "Connect to your {model} device.",
         "data": {
-          "ip_address": "IP address"
+          "host": "Hostname or IP",
+          "port": "Port"
         },
         "data_description": {
-          "ip_address": "The IP address of your HomeWizard P1 meter on the local network"
+          "host": "The IP address of your Marstek device on the local network"
         },
         "sections": {
           "advanced_options": {

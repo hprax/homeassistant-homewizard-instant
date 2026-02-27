@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - master
   pull_request:
 
 jobs:
@@ -12,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.12"]
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
@@ -26,9 +27,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements_test.txt
 
+      - name: Lint
+        run: python -m ruff check custom_components/homewizard_instant/
+
+      - name: Type check
+        run: python -m mypy --strict custom_components/homewizard_instant/
+
       - name: Run tests
-        env:
-          PYTHONPATH: ${{ github.workspace }}
         run: pytest tests/ -v --tb=short --cov=custom_components/homewizard_instant --cov-report=term-missing --cov-fail-under=95
 
       - name: Upload coverage reports

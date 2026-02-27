@@ -1,4 +1,4 @@
-````skill
+```skill
 ---
 name: hacs-compliance
 description: HACS requirements, manifest fields, CI workflows, and repository structure for custom component distribution
@@ -20,7 +20,7 @@ Required structure for HACS custom integrations:
 
 ```
 custom_components/
-└── homewizard_instant/
+└── marstek/
     ├── __init__.py
     ├── manifest.json      # Required: integration metadata
     ├── config_flow.py
@@ -38,21 +38,21 @@ All required fields for HACS compliance:
 
 ```json
 {
-  "domain": "homewizard_instant",
-  "name": "HomeWizard P1 Meter (Instant)",
-  "codeowners": ["@your-github-username"],
+  "domain": "marstek",
+  "name": "Marstek",
+  "codeowners": ["@taurgis"],
   "config_flow": true,
-  "documentation": "https://github.com/your-username/homeassistant-homewizard-instant",
-  "issue_tracker": "https://github.com/your-username/homeassistant-homewizard-instant/issues",
+  "documentation": "https://github.com/taurgis/has-marstek-local-api",
+  "issue_tracker": "https://github.com/taurgis/has-marstek-local-api/issues",
   "iot_class": "local_polling",
   "version": "0.1.0",
-  "requirements": ["python-homewizard-energy>=4.0.0"]
+  "requirements": []
 }
 ```
 
 | Field | Required | Notes |
 |-------|----------|-------|
-| `domain` | Yes | Unique identifier, lowercase (`homewizard_instant`) |
+| `domain` | Yes | Unique identifier, lowercase |
 | `name` | Yes | Display name |
 | `codeowners` | Yes | GitHub usernames with @ prefix |
 | `config_flow` | Yes | Must be `true` for UI setup |
@@ -60,7 +60,7 @@ All required fields for HACS compliance:
 | `issue_tracker` | Recommended | GitHub issues URL |
 | `iot_class` | Yes | One of: `local_polling`, `local_push`, `cloud_polling`, etc. |
 | `version` | Yes | Semantic version string |
-| `requirements` | Yes | Python package dependencies |
+| `requirements` | Yes | Python package dependencies (empty array if none) |
 
 ## hacs.json (Optional)
 
@@ -68,7 +68,7 @@ Recommended for better HACS integration:
 
 ```json
 {
-  "name": "HomeWizard P1 Meter (Instant)",
+  "name": "Marstek Energy Storage",
   "render_readme": true,
   "homeassistant": "2024.1.0",
   "iot_class": "local_polling"
@@ -147,7 +147,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -r requirements_test.txt
-      - run: pytest tests/ -v --cov=custom_components/homewizard_instant
+      - run: pytest tests/ -v --cov=custom_components/marstek
 ```
 
 ## GitHub Repository Requirements
@@ -157,7 +157,7 @@ Your repository must meet these requirements for HACS:
 - **Repository is public** on GitHub
 - **Has a description** - Brief summary of what the integration does
 - **Issues enabled** - Users need a way to report problems
-- **Topics defined** - Add relevant topics like `home-assistant`, `hacs`, `custom-component`, `homewizard`, `p1-meter`
+- **Topics defined** - Add relevant topics like `home-assistant`, `hacs`, `custom-component`
 - **Has at least one release** - Full GitHub release (not just a tag)
 - **Not archived** - Repository must be active
 
@@ -197,4 +197,4 @@ For inclusion in HACS default repositories (optional, higher bar):
 - [ ] README has installation instructions for HACS
 - [ ] Version in manifest.json matches release tags
 
-````
+```

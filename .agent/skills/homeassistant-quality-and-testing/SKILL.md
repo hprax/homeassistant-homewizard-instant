@@ -152,7 +152,7 @@ rules:
 Statuses: `done`, `todo`, `exempt` (with comment explaining why).
 
 ## Manifest & Metadata
-- Pin requirements (e.g., `python-homewizard-energy==x.y.z`) to avoid breaking upgrades.
+- Pin requirements (e.g., `pymarstek==x.y.z`) to avoid breaking upgrades.
 - Set `version`, `config_flow: true`, `iot_class`, and `codeowners`; keep documentation and issue tracker URLs current.
 - For HACS, keep releases/tagging consistent and add `hacs.json` if distribution via HACS.
 
@@ -176,10 +176,10 @@ Statuses: `done`, `todo`, `exempt` (with comment explaining why).
 
 ```bash
 # 1. Type checking (strict mode)
-python3 -m mypy --strict custom_components/homewizard_instant/
+python3 -m mypy --strict custom_components/<domain>/
 
 # 2. Tests with coverage
-pytest tests/ -q --cov=custom_components/homewizard_instant --cov-fail-under=95
+pytest tests/ -q --cov=custom_components/<domain> --cov-fail-under=95
 ```
 
 Both must pass. Fix any errors and re-run until clean.
