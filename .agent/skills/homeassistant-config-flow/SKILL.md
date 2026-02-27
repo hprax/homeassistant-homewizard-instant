@@ -9,7 +9,7 @@ Use this skill when adding or adjusting setup flows, discovery handlers, options
 
 ## When to Use
 - Creating or refining `config_flow.py`
-- Handling discovery sources (user, dhcp, zeroconf, integration discovery)
+- Handling discovery sources (`user`, `zeroconf`, `dhcp`)
 - Adding/updating options flow or reauth steps
 - Ensuring duplicate prevention and IP-change handling are correct
 
@@ -17,13 +17,14 @@ Use this skill when adding or adjusting setup flows, discovery handlers, options
 - **UI-first**: No new YAML; all setup in the UI.
 - **Async-only**: All I/O must be awaited; use executor only for blocking library work.
 - **One device, one entry**: Abort duplicates; update existing entries when discovery reports a new host/IP.
-- **Stable identifiers**: Use BLE-MAC (or WiFi MAC) for unique IDs; never pivot unique IDs on IP.
+- **Stable identifiers**: Use the integration unique ID format `f"{DOMAIN}_{product_type}_{serial}"`; never pivot unique IDs on IP.
 - **Selectors > raw text**: Prefer HA selectors for better UX and validation.
 
 ## Step Patterns
 - `async_step_user`: show form when `user_input is None`; on submit, validate connectivity; return errors with keys (`cannot_connect`, `invalid_auth`, `already_configured`).
-- `async_step_dhcp` / `async_step_zeroconf` / `async_step_integration_discovery`: deduplicate via MAC/unique ID; if existing entry with new host, update data and abort with `already_configured`.
-- `async_step_confirm`: for discovery flows, prefill known values and ask user to confirm.
+- `async_step_zeroconf`: validate discovery properties, set unique ID, and continue to `async_step_discovery_confirm`.
+- `async_step_dhcp`: reconnect to discovered IP, set unique ID, and update existing entry IP via `_abort_if_unique_id_configured(updates=...)`.
+- `async_step_discovery_confirm`: for discovery flows, validate connectivity and create entry.
 
 ## Reauth Flow Pattern
 
@@ -32,57 +33,45 @@ Reauth handles authentication/connection failures gracefully, allowing users to 
 ### Implementation Steps
 
 1. **Entry point**: `async_step_reauth(entry_data)` - Called when reauth is triggered
-2. **Confirm step**: `async_step_reauth_confirm(user_input)` - Show form, validate, update entry
+2. **Confirm step**: `async_step_reauth_enable_api(user_input)` - Ask user to re-enable local API and retry
 
 ### Code Pattern
 
 ```python
-from homeassistant.config_entries import SOURCE_REAUTH
-
 async def async_step_reauth(
     self, entry_data: dict[str, Any]
 ) -> ConfigFlowResult:
-    """Handle reauth when device becomes unreachable."""
-    return await self.async_step_reauth_confirm()
+    """Handle reauth when local API is disabled."""
+    self.ip_address = entry_data[CONF_IP_ADDRESS]
+    return await self.async_step_reauth_enable_api()
 
-async def async_step_reauth_confirm(
+async def async_step_reauth_enable_api(
     self, user_input: dict[str, Any] | None = None
 ) -> ConfigFlowResult:
-    """Confirm reauth dialog."""
-    errors: dict[str, str] = {}
-    reauth_entry = self._get_reauth_entry()
+    """Ask the user to re-enable local API in the HomeWizard app."""
+    errors: dict[str, str] | None = None
 
     if user_input is not None:
-        host = user_input.get(CONF_HOST)
+        reauth_entry = self._get_reauth_entry()
         try:
-            device_info = await get_device_info(host=host, port=port)
-            if device_info:
-                # Validate unique ID unchanged
-                await self.async_set_unique_id(device_info["ble_mac"])
-                self._abort_if_unique_id_mismatch()
-                # Preferred: use async_update_reload_and_abort helper
-                return self.async_update_reload_and_abort(
-                    reauth_entry,
-                    data_updates={CONF_HOST: host},
-                )
-            errors["base"] = "cannot_connect"
-        except (OSError, TimeoutError):
-            errors["base"] = "cannot_connect"
+            await async_try_connect(self.hass, reauth_entry.data[CONF_IP_ADDRESS])
+        except RecoverableError as ex:
+            errors = {"base": ex.error_code}
+        else:
+            await self.hass.config_entries.async_reload(reauth_entry.entry_id)
+            return self.async_abort(reason="reauth_enable_api_successful")
 
     return self.async_show_form(
-        step_id="reauth_confirm",
-        data_schema=vol.Schema({vol.Required(CONF_HOST): cv.string}),
+        step_id="reauth_enable_api",
         errors=errors,
-        description_placeholders={"host": reauth_entry.data.get(CONF_HOST, "")},
     )
 ```
 
 ### Key Helpers
 
 - `self._get_reauth_entry()` - Get the config entry being reauthenticated
-- `self.async_update_reload_and_abort()` - Update entry, reload, and abort with `reauth_successful` (preferred)
-- `self._abort_if_unique_id_mismatch()` - Ensure the same device is being reauthenticated
-- Check source: `if self.source == SOURCE_REAUTH:`
+- `async_try_connect(...)` - Re-checks local API availability
+- `self.hass.config_entries.async_reload(entry_id)` - Reloads entry after API is re-enabled
 
 ### Triggering Reauth
 
@@ -95,16 +84,15 @@ entry.async_start_reauth(hass)
 
 Add to `strings.json` and `translations/en.json`:
 ```json
-"reauth_confirm": {
-  "title": "Reconnect Device",
-  "description": "The device at {host} is not responding.",
-  "data": {"host": "IP address"}
+"reauth_enable_api": {
+  "title": "Enable local API",
+  "description": "Enable local API in the HomeWizard app, then submit to retry."
 }
 ```
 And abort reason:
 ```json
 "abort": {
-  "reauth_successful": "Device reconnected successfully"
+  "reauth_enable_api_successful": "Local API has been enabled"
 }
 ```
 
@@ -184,7 +172,7 @@ return self.async_show_progress_done(next_step_id="finish")
 
 ## Discovery Handling
 - Manifest-driven discovery (dhcp/zeroconf/ssdp) should land in dedicated steps.
-- The scanner handles IP changes; do not add fallback discovery inside coordinator updates.
+- DHCP + zeroconf should handle IP changes; do not add fallback discovery inside coordinator updates.
 - On discovery, set unique ID early and call `self._abort_if_unique_id_configured()`.
 - If the device is known but host changed, update the entry data and abort with `already_configured`.
 
@@ -202,14 +190,13 @@ Config flow forms are translated via `strings.json`:
   "config": {
     "step": {
       "user": {
-        "title": "Set up Marstek",
+        "title": "Set up HomeWizard Instant",
         "description": "Connect to your {model} device.",
         "data": {
-          "host": "Hostname or IP",
-          "port": "Port"
+          "ip_address": "IP address"
         },
         "data_description": {
-          "host": "The IP address of your Marstek device on the local network"
+          "ip_address": "The IP address of your HomeWizard device on the local network"
         },
         "sections": {
           "advanced_options": {
@@ -239,9 +226,9 @@ Config flow forms are translated via `strings.json`:
 - `sections` - Section names and descriptions (for `section()` fields)
 
 ## Validation Checklist
-- [ ] Unique ID set from BLE-MAC/WiFi MAC; duplicates abort
+- [ ] Unique ID set from product type + serial (`DOMAIN`-prefixed); duplicates abort
 - [ ] User step validates connectivity asynchronously
 - [ ] Discovery steps update existing entry on host/IP change
 - [ ] Options flow reloads entry on change
-- [ ] Reauth asks only for the changed credential
+- [ ] Reauth path uses `reauth_enable_api` for API-disabled recovery
 - [ ] Selectors used where appropriate; translations updated

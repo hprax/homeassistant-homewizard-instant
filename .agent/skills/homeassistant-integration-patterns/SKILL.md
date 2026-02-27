@@ -1,9 +1,9 @@
 ---
 name: homeassistant-integration-patterns
-description: Project-specific patterns for the Marstek integration (config flow, coordinator, scanner, entities, translations)
+description: Project-specific patterns for the HomeWizard Instant integration (config flow, coordinator, entities, translations)
 ---
 
-# Home Assistant Integration Patterns (Marstek)
+# Home Assistant Integration Patterns (HomeWizard Instant)
 
 This skill helps you make correct, repo-consistent changes to this Home Assistant custom integration.
 
@@ -19,86 +19,84 @@ This skill helps you make correct, repo-consistent changes to this Home Assistan
 
 | Task | File(s) |
 |---|---|
-| Setup / teardown / coordinator wiring | `__init__.py` |
-| Config flow (user, dhcp, integration discovery) | `config_flow.py` |
-| Central polling (tiered intervals) | `coordinator.py` |
-| IP-change scanner | `scanner.py` |
-| Sensors | `sensor.py` (EntityDescription pattern) |
-| Binary sensors | `binary_sensor.py` (EntityDescription pattern) |
-| Select entities | `select.py` |
-| Services | `services.py` (idempotent registration) |
-| Device automation actions | `device_action.py` |
-| Device info helper | `device_info.py` |
-| Mode configuration | `mode_config.py` |
-| Diagnostics | `diagnostics.py` |
-| Text / translations | `strings.json`, `translations/en.json` |
-| Icons | `icons.json` |
-| Local API reference | `docs/marstek_device_openapi.MD` |
-| UDP client library | `pymarstek/` |
+| Setup / teardown / coordinator wiring | `custom_components/homewizard_instant/__init__.py` |
+| Config flow (user, zeroconf, dhcp, reauth, reconfigure) | `custom_components/homewizard_instant/config_flow.py` |
+| Central polling + API-disabled handling | `custom_components/homewizard_instant/coordinator.py` |
+| Sensors + external meters | `custom_components/homewizard_instant/sensor.py` |
+| Base entity / device registry identifiers | `custom_components/homewizard_instant/entity.py` |
+| Diagnostics redaction | `custom_components/homewizard_instant/diagnostics.py` |
+| Constants (including 1s interval) | `custom_components/homewizard_instant/const.py` |
+| Text / translations | `custom_components/homewizard_instant/strings.json`, `custom_components/homewizard_instant/translations/en.json` |
 
 ## Core Rules
 
 1. **Coordinator-only I/O**
-   - Never add per-entity UDP calls.
-   - Read everything from `MarstekDataUpdateCoordinator.data`.
-   - Use `_async_setup()` for one-time initialization during first refresh.
-   - Set `always_update=False` if data supports `__eq__` comparison.
+   - Never add per-entity API calls.
+   - Read everything from `HWEnergyDeviceUpdateCoordinator.data`.
+   - Keep a single shared poll cycle (`UPDATE_INTERVAL = timedelta(seconds=1)`).
+   - Keep `PARALLEL_UPDATES = 1` in `sensor.py`.
 
 2. **Async-only**
    - Only do async I/O; never block the event loop.
+   - Use `async_get_clientsession(hass)` and pass it into `HomeWizardEnergyV1`.
+   - Do not create ad-hoc aiohttp sessions per call.
 
 ### Coordinator Error Handling
 ```python
 async def _async_update_data(self):
     try:
-        return await self.api.fetch_data()
-    except AuthError as err:
-        # Triggers reauth flow automatically
-        raise ConfigEntryAuthFailed from err
-    except RateLimitError:
-        # Backoff with retry_after
-        raise UpdateFailed(retry_after=60)
-    except ConnectionError as err:
-        raise UpdateFailed(f"Connection failed: {err}")
+        return await self.api.combined()
+    except RequestError as err:
+        raise UpdateFailed(
+            err,
+            translation_domain=DOMAIN,
+            translation_key="communication_error",
+        ) from err
+    except DisabledError as err:
+        raise UpdateFailed(
+            err,
+            translation_domain=DOMAIN,
+            translation_key="api_disabled",
+        ) from err
 ```
 
 3. **Avoid unavailable clutter**
-   - Only create entities when there’s a corresponding data key in coordinator output.
-   - Prefer explicit per-sensor classes or a description table keyed by coordinator data.
+   - Only create entities when `has_fn(data)` is true in `SENSORS`.
+   - For external devices, only create entities when `measurement.external_devices` has a supported type.
 
-4. **Use translation-aware config-flow errors**
-   - Config flow errors should use keys defined in `custom_components/marstek/strings.json`.
-   - Reauth flows should ask only for the changed credential and update the existing entry.
+4. **Use API-disabled recovery path as designed**
+   - `DisabledError` in the coordinator is expected behavior when local API is disabled.
+   - Keep issue creation (`local_api_disabled`) and config entry reload behavior intact.
+   - Reauth flow (`reauth_enable_api`) should guide users to re-enable local API.
 
 5. **Stable identifiers**
-   - Use BLE-MAC-based unique IDs for entities and devices; never pivot on IPs.
+   - Config entry unique ID: `f"{DOMAIN}_{product_type}_{serial}"`.
+   - Sensor unique IDs: `f"{coordinator.config_entry.unique_id}_{description.key}"`.
+   - Device registry identifiers must remain `DOMAIN`-prefixed to avoid collisions.
    - Keep `_attr_has_entity_name = True` and set `device_info` for grouping.
 
 ## Adding a new sensor
 
 Steps:
-1. Find the value on `coordinator.data` (a plain `dict[str, Any]` coming from `pymarstek`).
-2. Add a `MarstekSensorEntityDescription` to the `SENSORS` tuple in `sensor.py`.
-3. Use `exists_fn` to conditionally create entities (avoids permanent unavailable state).
-4. Keep the `unique_id` stable (BLE-MAC + sensor key).
+1. Find the value on `coordinator.data` (`CombinedModels` from `python-homewizard-energy`).
+2. Add a `HomeWizardSensorEntityDescription` to `SENSORS` in `sensor.py`.
+3. Use `has_fn` to conditionally create entities (avoids permanent unavailable state).
+4. Keep the unique ID stable (`config_entry.unique_id` + sensor key).
 5. Add translation keys in `translations/en.json` (and keep `strings.json` in sync).
 6. Use `suggested_display_precision` for numeric sensors.
-7. Only register entities for data keys that exist to avoid permanent `unavailable` noise.
+7. For external devices, use `EXTERNAL_SENSORS` and keep `m3` to `UnitOfVolume.CUBIC_METERS` normalization.
 
 ### Entity Patterns (Mandatory for New Integrations)
 
 ```python
-class MarstekSensor(CoordinatorEntity, SensorEntity):
+class HomeWizardSensorEntity(HomeWizardEntity, SensorEntity):
     _attr_has_entity_name = True  # MANDATORY
-    
+
     def __init__(self, coordinator, description):
         super().__init__(coordinator)
         self.entity_description = description
-        self._attr_unique_id = f"{coordinator.ble_mac}_{description.key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.ble_mac)},
-            name=coordinator.device_name,
-            manufacturer="Marstek",
+        self._attr_unique_id = (
+            f"{coordinator.config_entry.unique_id}_{description.key}"
         )
 ```
 
@@ -106,25 +104,19 @@ class MarstekSensor(CoordinatorEntity, SensorEntity):
 
 ```python
 @dataclass(kw_only=True)
-class MarstekSensorEntityDescription(SensorEntityDescription):
-    value_fn: Callable[[dict], StateType]
-    exists_fn: Callable[[dict], bool] = lambda _: True
+class HomeWizardSensorEntityDescription(SensorEntityDescription):
+    enabled_fn: Callable[[CombinedModels], bool] = lambda _: True
+    has_fn: Callable[[CombinedModels], bool]
+    value_fn: Callable[[CombinedModels], StateType | datetime]
 
-SENSORS: tuple[MarstekSensorEntityDescription, ...] = (
-    MarstekSensorEntityDescription(
-        key="battery_soc",
-        translation_key="battery_soc",
-        device_class=SensorDeviceClass.BATTERY,
-        native_unit_of_measurement=PERCENTAGE,
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data.get("soc"),
-    ),
-    MarstekSensorEntityDescription(
-        key="power",
-        device_class=SensorDeviceClass.POWER,
+SENSORS: tuple[HomeWizardSensorEntityDescription, ...] = (
+    HomeWizardSensorEntityDescription(
+        key="active_power_w",
         native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data.get("power"),
+        has_fn=lambda data: data.measurement.power_w is not None,
+        value_fn=lambda data: data.measurement.power_w,
     ),
 )
 ```
@@ -148,7 +140,7 @@ Create `icons.json`:
 ```
 
 ### Entity Categories
-- `EntityCategory.DIAGNOSTIC` - RSSI, firmware version, temperature
+- `EntityCategory.DIAGNOSTIC` - WiFi RSSI, WiFi strength, meter metadata
 - `EntityCategory.CONFIG` - Settings the user can change
 - Set `entity_registry_enabled_default = False` for rarely-used sensors
 
@@ -160,18 +152,14 @@ Create `icons.json`:
 
 ## Common pitfalls
 
-- Polling/discovery storms (too many UDP requests too frequently).
-- Doing IP discovery inside setup or coordinator updates (scanner already handles this).
-- Sending control commands without pausing polling (causes concurrent UDP traffic and flaky results).
-- Breaking unique IDs (must remain stable across upgrades and IP changes).
-- Skipping options reload listeners or reauth handling in `config_flow.py`.
-- Using aggressive polling intervals instead of event-driven triggers (prefer immediate scan on failure over shorter intervals).
+- Adding per-entity network requests instead of using coordinator data.
+- Removing the 1-second poll interval (`const.py`) without explicit product direction.
+- Increasing request parallelism above `PARALLEL_UPDATES = 1`.
+- Breaking unique IDs or dropping `DOMAIN`-prefixed device identifiers.
+- Editing only `translations/en.json` without keeping `strings.json` aligned.
 
-## Event-Driven Best Practices
+## Discovery and IP Changes
 
-When detecting connectivity issues or IP changes:
-1. **Prefer event-driven over polling**: Trigger immediate action on failure instead of shortening poll intervals
-2. **Debounce**: Add minimum intervals between event-triggered actions (e.g., 30s minimum between scans)
-3. **Keep backup polling**: Maintain a longer interval (10 min) as a backstop for edge cases
-
-Example: The coordinator triggers `MarstekScanner.async_request_scan()` when it hits the failure threshold, enabling fast IP change detection without aggressive periodic scanning.
+- DHCP and zeroconf should update existing entries when the same device appears on a new IP.
+- Do not add fallback discovery logic inside coordinator update loops.
+- Keep config flow dedup keyed on the integration unique ID, not host/IP.

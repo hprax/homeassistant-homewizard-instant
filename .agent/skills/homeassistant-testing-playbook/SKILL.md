@@ -25,7 +25,7 @@ Use this skill to design and implement tests/CI for a custom integration targeti
 - `pytest-homeassistant-custom-component`: hass fixture, MockConfigEntry, aiohttp client mock (if HTTP), time helpers.
 - Snapshot: `syrupy` + `HomeAssistantSnapshotExtension` for diagnostics/device registry/entity attributes; redact secrets before snapshotting.
 - Time travel: `freezer` + `async_fire_time_changed` to advance coordinator timers.
-- Coverage: `pytest --cov=custom_components.marstek --cov-report=xml --cov-fail-under=95`.
+- Coverage: `pytest --cov=custom_components.homewizard_instant --cov-report=xml --cov-fail-under=95`.
 - Examples: see [references/EXAMPLES.md](references/EXAMPLES.md) for skeleton tests (config flow, setup/unload, coordinator failures, diagnostics snapshots).
  - Repo scaffold: see `tests/` and `requirements_test.txt` for pinned deps and starter tests.
 

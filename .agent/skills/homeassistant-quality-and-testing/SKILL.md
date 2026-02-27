@@ -56,7 +56,7 @@ async def _async_update_data(self):
 - **`_attr_has_entity_name = True` is MANDATORY for new integrations**; entity name should be capability-only (device name is prepended by HA).
 - For the "main feature" entity of a device, set `_attr_name = None` to use only the device name.
 - Provide `device_info` with stable identifiers (prefer MAC/serial over IP); all entities for a device must share the same identifiers set.
-- Keep `unique_id` stable and predictable (e.g., `{ble_mac}_{key}`); changing it breaks history and customizations.
+- Keep `unique_id` stable and predictable (e.g., `{config_entry_unique_id}_{key}`); changing it breaks history and customizations.
 - Only create entities for data that actually exists to avoid permanent `unavailable` noise.
 - Use `_attr_*` class/instance attributes pattern for cleaner code:
   ```python
@@ -152,7 +152,7 @@ rules:
 Statuses: `done`, `todo`, `exempt` (with comment explaining why).
 
 ## Manifest & Metadata
-- Pin requirements (e.g., `pymarstek==x.y.z`) to avoid breaking upgrades.
+- Pin requirements (e.g., `python-homewizard-energy==10.0.1`) to avoid breaking upgrades.
 - Set `version`, `config_flow: true`, `iot_class`, and `codeowners`; keep documentation and issue tracker URLs current.
 - For HACS, keep releases/tagging consistent and add `hacs.json` if distribution via HACS.
 

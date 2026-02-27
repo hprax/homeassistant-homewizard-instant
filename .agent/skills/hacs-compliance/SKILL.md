@@ -20,7 +20,7 @@ Required structure for HACS custom integrations:
 
 ```
 custom_components/
-└── marstek/
+└── homewizard_instant/
     ├── __init__.py
     ├── manifest.json      # Required: integration metadata
     ├── config_flow.py
@@ -38,12 +38,12 @@ All required fields for HACS compliance:
 
 ```json
 {
-  "domain": "marstek",
-  "name": "Marstek",
+  "domain": "homewizard_instant",
+  "name": "HomeWizard Instant",
   "codeowners": ["@taurgis"],
   "config_flow": true,
-  "documentation": "https://github.com/taurgis/has-marstek-local-api",
-  "issue_tracker": "https://github.com/taurgis/has-marstek-local-api/issues",
+  "documentation": "https://github.com/taurgis/homeassistant-homewizard-instant",
+  "issue_tracker": "https://github.com/taurgis/homeassistant-homewizard-instant/issues",
   "iot_class": "local_polling",
   "version": "0.1.0",
   "requirements": []
@@ -68,7 +68,7 @@ Recommended for better HACS integration:
 
 ```json
 {
-  "name": "Marstek Energy Storage",
+  "name": "HomeWizard Instant",
   "render_readme": true,
   "homeassistant": "2024.1.0",
   "iot_class": "local_polling"
@@ -147,7 +147,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -r requirements_test.txt
-      - run: pytest tests/ -v --cov=custom_components/marstek
+      - run: pytest tests/ -v --cov=custom_components/homewizard_instant
 ```
 
 ## GitHub Repository Requirements
