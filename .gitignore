@@ -21,6 +21,7 @@ ENV/
 .ruff_cache/
 .coverage
 htmlcov/
+artifacts/
 
 # Builds
 build/

@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import DOMAIN, PLATFORMS
+from .const import PLATFORMS
 from .coordinator import HomeWizardConfigEntry, HWEnergyDeviceUpdateCoordinator
 
 

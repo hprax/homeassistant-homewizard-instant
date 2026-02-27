@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from typing import Any
 
@@ -48,7 +49,7 @@ class HomeWizardConfigFlow(ConfigFlow, domain=DOMAIN):
             try:
                 device_info = await async_try_connect(self.hass, user_input[CONF_IP_ADDRESS])
             except RecoverableError as ex:
-                LOGGER.error(ex)
+                LOGGER.debug("User step connection check failed: %s", ex)
                 errors = {"base": ex.error_code}
             else:
                 # Only support P1 meter
@@ -120,15 +121,15 @@ class HomeWizardConfigFlow(ConfigFlow, domain=DOMAIN):
         try:
             device = await async_try_connect(self.hass, discovery_info.ip)
         except RecoverableError as ex:
-            LOGGER.error(ex)
-            return self.async_abort(reason="unknown")
+            LOGGER.debug("DHCP discovery connection check failed: %s", ex)
+            return self.async_abort(reason="unknown_error")
 
         # Only support P1 meter
         if device.product_type not in SUPPORTED_PRODUCT_TYPES:
             return self.async_abort(reason="device_not_supported")
 
         if device.serial is None:
-            return self.async_abort(reason="unknown")
+            return self.async_abort(reason="unknown_error")
 
         await self.async_set_unique_id(
             f"{DOMAIN}_{device.product_type}_{device.serial}"
@@ -141,41 +142,49 @@ class HomeWizardConfigFlow(ConfigFlow, domain=DOMAIN):
         # This situation should never happen, as Home Assistant will only
         # send updates for existing entries. In case it does, we'll just
         # abort the flow with an unknown error.
-        return self.async_abort(reason="unknown")
+        return self.async_abort(reason="unknown_error")
 
     async def async_step_discovery_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Confirm discovery."""
-        assert self.ip_address
-        assert self.product_name
-        assert self.product_type
-        assert self.serial
+        ip_address = self.ip_address
+        product_name = self.product_name
+        product_type = self.product_type
+        serial = self.serial
+
+        if (
+            ip_address is None
+            or product_name is None
+            or product_type is None
+            or serial is None
+        ):
+            return self.async_abort(reason="unknown_error")
 
         errors: dict[str, str] | None = None
         if user_input is not None or not onboarding.async_is_onboarded(self.hass):
             try:
-                await async_try_connect(self.hass, self.ip_address)
+                await async_try_connect(self.hass, ip_address)
             except RecoverableError as ex:
-                LOGGER.error(ex)
+                LOGGER.debug("Discovery confirmation connection check failed: %s", ex)
                 errors = {"base": ex.error_code}
             else:
                 return self.async_create_entry(
-                    title=self.product_name,
-                    data={CONF_IP_ADDRESS: self.ip_address},
+                    title=product_name,
+                    data={CONF_IP_ADDRESS: ip_address},
                 )
 
         self._set_confirm_only()
 
         # P1 meter doesn't need serial in name as users generally only have one
-        self.context["title_placeholders"] = {"name": self.product_name}
+        self.context["title_placeholders"] = {"name": product_name}
 
         return self.async_show_form(
             step_id="discovery_confirm",
             description_placeholders={
-                CONF_PRODUCT_TYPE: self.product_type,
-                CONF_SERIAL: self.serial,
-                CONF_IP_ADDRESS: self.ip_address,
+                CONF_PRODUCT_TYPE: product_type,
+                CONF_SERIAL: serial,
+                CONF_IP_ADDRESS: ip_address,
             },
             errors=errors,
         )
@@ -197,7 +206,7 @@ class HomeWizardConfigFlow(ConfigFlow, domain=DOMAIN):
             try:
                 await async_try_connect(self.hass, reauth_entry.data[CONF_IP_ADDRESS])
             except RecoverableError as ex:
-                LOGGER.error(ex)
+                LOGGER.debug("Reauth connection check failed: %s", ex)
                 errors = {"base": ex.error_code}
             else:
                 await self.hass.config_entries.async_reload(reauth_entry.entry_id)
@@ -216,7 +225,7 @@ class HomeWizardConfigFlow(ConfigFlow, domain=DOMAIN):
             try:
                 device_info = await async_try_connect(self.hass, user_input[CONF_IP_ADDRESS])
             except RecoverableError as ex:
-                LOGGER.error(ex)
+                LOGGER.debug("Reconfigure connection check failed: %s", ex)
                 errors = {"base": ex.error_code}
             else:
                 if device_info.serial is None:
@@ -275,6 +284,9 @@ async def async_try_connect(
         raise RecoverableError(
             "Device unreachable or unexpected response", "network_error"
         ) from ex
+
+    except asyncio.CancelledError:
+        raise
 
     except Exception as ex:
         LOGGER.exception("Unexpected exception")

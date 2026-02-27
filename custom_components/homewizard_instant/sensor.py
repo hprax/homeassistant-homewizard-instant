@@ -32,6 +32,10 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.typing import StateType
+from homeassistant.util.dt import utcnow
+from homeassistant.util.variance import ignore_variance
+
 if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import (
         AddEntitiesCallback as AddConfigEntryEntitiesCallback,
@@ -44,18 +48,14 @@ else:
             AddEntitiesCallback as AddConfigEntryEntitiesCallback,
         )
 
+from .const import DOMAIN
+from .coordinator import HomeWizardConfigEntry, HWEnergyDeviceUpdateCoordinator
+from .entity import HomeWizardEntity
 
 SENSOR_DEVICE_CLASS_UNITS = cast(
     "dict[SensorDeviceClass, set[str]]",
     getattr(sensor_platform, "DEVICE_CLASS_UNITS"),
 )
-from homeassistant.helpers.typing import StateType
-from homeassistant.util.dt import utcnow
-from homeassistant.util.variance import ignore_variance
-
-from .const import DOMAIN
-from .coordinator import HomeWizardConfigEntry, HWEnergyDeviceUpdateCoordinator
-from .entity import HomeWizardEntity
 
 PARALLEL_UPDATES = 1
 
@@ -185,7 +185,7 @@ SENSORS: Final[tuple[HomeWizardSensorEntityDescription, ...]] = (
         has_fn=lambda data: (
             # SKT/SDM230/630 provides both total and tariff 1: duplicate.
             data.measurement.energy_import_t1_kwh is not None
-            and data.measurement.energy_export_t2_kwh is not None
+            and data.measurement.energy_import_t2_kwh is not None
         ),
         value_fn=lambda data: data.measurement.energy_import_t1_kwh or None,
     ),
@@ -771,7 +771,7 @@ class HomeWizardExternalSensorEntity(HomeWizardEntity, SensorEntity):
     def device(self) -> ExternalDevice | None:
         """Return ExternalDevice object."""
         return (
-            self.coordinator.data.measurement.external_devices[self._device_id]
+            self.coordinator.data.measurement.external_devices.get(self._device_id)
             if self.coordinator.data.measurement.external_devices is not None
             else None
         )

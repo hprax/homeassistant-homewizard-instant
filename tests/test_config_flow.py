@@ -471,7 +471,7 @@ async def test_dhcp_unknown_device(hass) -> None:
         )
 
     assert result["type"] == FlowResultType.ABORT
-    assert result["reason"] == "unknown"
+    assert result["reason"] == "unknown_error"
 
 
 async def test_dhcp_device_not_supported(hass) -> None:
@@ -523,7 +523,7 @@ async def test_dhcp_serial_missing_aborts_unknown(hass) -> None:
         )
 
     assert result["type"] == FlowResultType.ABORT
-    assert result["reason"] == "unknown"
+    assert result["reason"] == "unknown_error"
 
 
 async def test_discovery_confirm_error(hass) -> None:

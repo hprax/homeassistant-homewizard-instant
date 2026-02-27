@@ -137,3 +137,56 @@ async def test_external_sensor_no_device(hass, mock_config_entry, mock_combined_
     assert external.native_value is None
     assert external.available is False
     assert external.native_unit_of_measurement is None
+
+
+async def test_external_sensor_missing_device_key(hass, mock_config_entry, mock_combined_data):
+    """Test external sensor handles missing device key gracefully."""
+    mock_config_entry.add_to_hass(hass)
+
+    coordinator = HWEnergyDeviceUpdateCoordinator(
+        hass, mock_config_entry, api=AsyncMock()
+    )
+    coordinator.data = mock_combined_data
+
+    from custom_components.homewizard_instant.sensor import EXTERNAL_SENSORS
+
+    description = EXTERNAL_SENSORS[
+        coordinator.data.measurement.external_devices["gas123"].type
+    ]
+
+    external = HomeWizardExternalSensorEntity(coordinator, description, "missing")
+
+    assert external.device is None
+    assert external.native_value is None
+    assert external.available is False
+    assert external.native_unit_of_measurement is None
+    assert external.device_class is None
+
+
+async def test_import_tariff_t1_sensor_does_not_depend_on_export_t2(
+    hass, mock_config_entry, mock_combined_data
+):
+    """Test import tariff 1 sensor creation depends on import data only."""
+    mock_config_entry.add_to_hass(hass)
+
+    coordinator = HWEnergyDeviceUpdateCoordinator(
+        hass, mock_config_entry, api=AsyncMock()
+    )
+    coordinator.data = mock_combined_data
+    coordinator.data.measurement.energy_import_t1_kwh = 2.0
+    coordinator.data.measurement.energy_import_t2_kwh = 1.0
+    coordinator.data.measurement.energy_export_t2_kwh = None
+    mock_config_entry.runtime_data = coordinator
+
+    added = []
+
+    def _add_entities(entities):
+        added.extend(entities)
+
+    await async_setup_entry(hass, mock_config_entry, _add_entities)
+
+    assert any(
+        isinstance(entity, HomeWizardSensorEntity)
+        and entity.entity_description.key == "total_power_import_t1_kwh"
+        for entity in added
+    )

@@ -9,7 +9,7 @@ import pytest
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from custom_components.homewizard_instant import async_setup_entry, async_unload_entry
-from custom_components.homewizard_instant.const import DOMAIN, PLATFORMS
+from custom_components.homewizard_instant.const import PLATFORMS
 
 
 async def test_async_setup_entry_success(hass, mock_config_entry) -> None:

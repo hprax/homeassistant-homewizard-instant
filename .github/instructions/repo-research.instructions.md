@@ -6,7 +6,7 @@ applyTo: '**'
 # Repository Research Requirement
 
 ## Mandatory Pre-Step
-- Always run the subagent **Official Docs Researcher** before creating, updating, refactoring, scaffolding, or deleting a page, component, hook implementation, or documentation in the repository.
+- Always run the subagent **Official Docs Researcher** before creating, updating, refactoring, scaffolding, or deleting code, documentation, instructions, prompts, agents, skills, workflows, or collections in this repository.
 - Use its findings to incorporate the most current official documentation and online references in the change.
 
 ## When not to Use
