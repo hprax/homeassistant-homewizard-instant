@@ -4,56 +4,54 @@
       "already_configured": "Device is already configured",
       "device_not_supported": "This device is not supported. Only P1 meters are supported.",
       "invalid_discovery_parameters": "Invalid discovery parameters",
-      "reauth_enable_api_successful": "Enabling API was successful",
+      "reauth_successful": "Re-authentication was successful",
       "reconfigure_successful": "Reconfigure successful",
       "unknown_error": "Unexpected error",
       "wrong_device": "The configured device is not the same found on this IP address."
     },
     "error": {
-      "api_not_enabled": "The local API is disabled. Go to the HomeWizard app and enable the API in the device settings.",
-      "network_error": "Device unreachable, make sure that you have entered the correct IP address and that the device is available in your network"
+      "button_not_pressed": "The button on the P1 dongle was not pressed, or the 30-second window expired. Press the button once and try again.",
+      "network_error": "Device unreachable – check the IP address and that the device is on your network.",
+      "invalid_token": "The stored token was rejected by the device. Please re-authenticate."
     },
     "step": {
-      "discovery_confirm": {
-        "description": "Do you want to set up {product_type} ({serial}) at {ip_address}?",
-        "title": "Confirm"
+      "user": {
+        "title": "Configure device",
+        "description": "Enter the IP address of your HomeWizard P1 meter.",
+        "data": {
+          "ip_address": "IP address"
+        },
+        "data_description": {
+          "ip_address": "The IP address of your HomeWizard P1 meter."
+        }
       },
-      "reauth_enable_api": {
-        "description": "The local API is disabled. Go to the HomeWizard app and enable the API in the device settings."
+      "authorize": {
+        "title": "Authorize HomeAssistant",
+        "description": "Press the button on your P1 dongle **once**, then click **Submit** within 30 seconds.\n\nDevice: `{ip_address}`"
+      },
+      "discovery_confirm": {
+        "title": "Confirm",
+        "description": "Found {product_type} (serial: {serial}) at {ip_address}. Press **Confirm** and then press the button on the dongle to authorize access."
+      },
+      "reauth_confirm": {
+        "title": "Re-authorize",
+        "description": "Your API token has been revoked. Press the button on the P1 dongle at `{ip_address}` **once**, then click **Submit** within 30 seconds."
       },
       "reconfigure": {
+        "title": "Update IP address",
+        "description": "Update the IP address for {title}.",
         "data": {
           "ip_address": "IP address"
         },
         "data_description": {
-          "ip_address": "The IP address of your HomeWizard P1 meter."
-        },
-        "description": "Update configuration for {title}."
-      },
-      "user": {
-        "data": {
-          "ip_address": "IP address"
-        },
-        "data_description": {
-          "ip_address": "The IP address of your HomeWizard P1 meter."
-        },
-        "description": "Enter the IP address of your HomeWizard P1 meter to integrate with Home Assistant.",
-        "title": "Configure device"
+          "ip_address": "The new IP address of your HomeWizard P1 meter."
+        }
       }
     }
   },
   "exceptions": {
     "communication_error": {
       "message": "Failed to communicate with the device. Check the IP address and network connectivity."
-    },
-    "api_disabled": {
-      "message": "The local API is disabled. Enable it in the HomeWizard app and try again."
-    }
-  },
-  "issues": {
-    "local_api_disabled": {
-      "title": "Local API is disabled",
-      "description": "The local API is disabled. Go to the HomeWizard app and enable the API in the device settings."
     }
   },
   "entity": {

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final, TYPE_CHECKING, cast
 
-from homewizard_energy.models import CombinedModels, ExternalDevice
+from .models import DeviceResponseV2 as CombinedModels, ExternalDevice, ExternalDeviceType
 
 from homeassistant.components import sensor as sensor_platform
 from homeassistant.components.sensor import (
@@ -49,7 +49,7 @@ else:
         )
 
 from .const import DOMAIN
-from .coordinator import HomeWizardConfigEntry, HWEnergyDeviceUpdateCoordinator
+from .coordinator import HomeWizardConfigEntry, HWInstantCoordinator as HWEnergyDeviceUpdateCoordinator
 from .entity import HomeWizardEntity
 
 SENSOR_DEVICE_CLASS_UNITS = cast(
@@ -637,35 +637,35 @@ SENSORS: Final[tuple[HomeWizardSensorEntityDescription, ...]] = (
 
 
 EXTERNAL_SENSORS = {
-    ExternalDevice.DeviceType.GAS_METER: HomeWizardExternalSensorEntityDescription(
+    ExternalDeviceType.GAS_METER: HomeWizardExternalSensorEntityDescription(
         key="gas_meter",
         translation_key="gas_meter",
         suggested_device_class=SensorDeviceClass.GAS,
         state_class=SensorStateClass.TOTAL_INCREASING,
         device_name="Gas meter",
     ),
-    ExternalDevice.DeviceType.HEAT_METER: HomeWizardExternalSensorEntityDescription(
+    ExternalDeviceType.HEAT_METER: HomeWizardExternalSensorEntityDescription(
         key="heat_meter",
         translation_key="heat_meter",
         suggested_device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         device_name="Heat meter",
     ),
-    ExternalDevice.DeviceType.WARM_WATER_METER: HomeWizardExternalSensorEntityDescription(
+    ExternalDeviceType.WARM_WATER_METER: HomeWizardExternalSensorEntityDescription(
         key="warm_water_meter",
         translation_key="warm_water_meter",
         suggested_device_class=SensorDeviceClass.WATER,
         state_class=SensorStateClass.TOTAL_INCREASING,
         device_name="Warm water meter",
     ),
-    ExternalDevice.DeviceType.WATER_METER: HomeWizardExternalSensorEntityDescription(
+    ExternalDeviceType.WATER_METER: HomeWizardExternalSensorEntityDescription(
         key="water_meter",
         translation_key="water_meter",
         suggested_device_class=SensorDeviceClass.WATER,
         state_class=SensorStateClass.TOTAL_INCREASING,
         device_name="Water meter",
     ),
-    ExternalDevice.DeviceType.INLET_HEAT_METER: HomeWizardExternalSensorEntityDescription(
+    ExternalDeviceType.INLET_HEAT_METER: HomeWizardExternalSensorEntityDescription(
         key="inlet_heat_meter",
         translation_key="inlet_heat_meter",
         suggested_device_class=SensorDeviceClass.ENERGY,
