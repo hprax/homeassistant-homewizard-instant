@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import ssl
+from typing import Any
 
 import aiohttp
 
@@ -42,7 +43,7 @@ class HWInstantCoordinator(DataUpdateCoordinator[DeviceResponseV2]):
             # update_interval intentionally omitted: data arrives via WebSocket.
         )
         self.api = api
-        self._ws_task: asyncio.Task | None = None
+        self._ws_task: asyncio.Task[None] | None = None
 
     # ------------------------------------------------------------------
     # DataUpdateCoordinator overrides
@@ -131,7 +132,7 @@ class HWInstantCoordinator(DataUpdateCoordinator[DeviceResponseV2]):
                     LOGGER.debug("WebSocket closed/error: %s", msg.data)
                     break
 
-    async def _handle_ws_message(self, msg: dict) -> None:
+    async def _handle_ws_message(self, msg: dict[str, Any]) -> None:
         """Parse and apply an incoming WebSocket message."""
         msg_type = msg.get("type")
 
