@@ -63,6 +63,9 @@ class HomeWizardConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Step 2 – press the button on the device, then submit to obtain a token."""
+        if self.ip_address is None:
+            return self.async_abort(reason="unknown_error")
+
         errors: dict[str, str] = {}
 
         if user_input is not None or not onboarding.async_is_onboarded(self.hass):
@@ -248,6 +251,9 @@ class HomeWizardConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Press button again to obtain a fresh token."""
+        if self.ip_address is None:
+            return self.async_abort(reason="unknown_error")
+
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -286,6 +292,9 @@ class HomeWizardConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def _async_finish_setup(self, token: str) -> ConfigFlowResult:
         """Fetch device info, set unique_id and create the config entry."""
+        if self.ip_address is None:
+            return self.async_abort(reason="unknown_error")
+
         session = async_get_clientsession(self.hass)
         try:
             api = HomeWizardEnergyV2(

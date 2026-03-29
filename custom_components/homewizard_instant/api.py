@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ssl
-from typing import Any
+from typing import Any, cast
 
 import aiohttp
 
@@ -65,7 +65,7 @@ class HomeWizardEnergyV2:
                 if resp.status == 401:
                     raise AuthError("Token rejected by device")
                 resp.raise_for_status()
-                return await resp.json()
+                return cast(dict[str, Any], await resp.json())
         except AuthError:
             raise
         except aiohttp.ClientError as err:
@@ -125,8 +125,8 @@ class HomeWizardEnergyV2:
                         "Token creation not enabled – press the button on the device"
                     )
                 resp.raise_for_status()
-                data = await resp.json()
-                return data["token"]
+                data = cast(dict[str, Any], await resp.json())
+                return cast(str, data["token"])
         except (CreationNotEnabledError, AuthError):
             raise
         except aiohttp.ClientError as err:
