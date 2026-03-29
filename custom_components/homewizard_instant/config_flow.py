@@ -1,87 +1,101 @@
-"""Config flow for HomeWizard."""
+"""Config flow for HomeWizard Instant (API v2)."""
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
 from typing import Any
-
-from homewizard_energy import HomeWizardEnergyV1
-from homewizard_energy.const import Model
-from homewizard_energy.errors import DisabledError, RequestError
-from homewizard_energy.models import Device
-import voluptuous as vol
 
 from homeassistant.components import onboarding
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_IP_ADDRESS
 from homeassistant.data_entry_flow import AbortFlow
-from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from aiohttp import ClientSession
 from homeassistant.helpers.selector import TextSelector
+import voluptuous as vol
 
-from .const import CONF_PRODUCT_NAME, CONF_PRODUCT_TYPE, CONF_SERIAL, DOMAIN, LOGGER
+from .api import AuthError, CreationNotEnabledError, HomeWizardEnergyV2, RequestError
+from .const import CONF_PRODUCT_NAME, CONF_PRODUCT_TYPE, CONF_SERIAL, CONF_TOKEN, DOMAIN, LOGGER
 
-# Only support P1 meter
-SUPPORTED_PRODUCT_TYPES = [Model.P1_METER]
+# Only P1 meters support the v2 local API at this time.
+SUPPORTED_PRODUCT_TYPES = ["HWE-P1"]
+
+# Username registered on the device.  Must start with "local/".
+_USER_NAME = "local/homeassistant"
 
 
 class HomeWizardConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for P1 meter."""
+    """Handle a config flow for HomeWizard Instant (API v2)."""
 
-    VERSION = 1
+    # Bump to 2 so existing v1 entries are migrated / re-configured.
+    VERSION = 2
 
     ip_address: str | None = None
     product_name: str | None = None
     product_type: str | None = None
     serial: str | None = None
 
+    # ------------------------------------------------------------------
+    # User-initiated (manual) flow
+    # ------------------------------------------------------------------
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle a flow initiated by the user."""
-        errors: dict[str, str] | None = None
+        """Step 1 – ask for the device's IP address."""
+        errors: dict[str, str] = {}
+
         if user_input is not None:
-            try:
-                device_info = await async_try_connect(self.hass, user_input[CONF_IP_ADDRESS])
-            except RecoverableError as ex:
-                LOGGER.debug("User step connection check failed: %s", ex)
-                errors = {"base": ex.error_code}
-            else:
-                # Only support P1 meter
-                if device_info.product_type not in SUPPORTED_PRODUCT_TYPES:
-                    return self.async_abort(reason="device_not_supported")
+            ip = user_input[CONF_IP_ADDRESS].strip()
+            # Store the IP and move on to the authorization step.
+            self.ip_address = ip
+            return await self.async_step_authorize()
 
-                if device_info.serial is None:
-                    return self.async_abort(reason="unknown_error")
-
-                await self.async_set_unique_id(
-                    f"{DOMAIN}_{device_info.product_type}_{device_info.serial}"
-                )
-                self._abort_if_unique_id_configured(updates=user_input)
-                return self.async_create_entry(
-                    title=f"{device_info.product_name}",
-                    data=user_input,
-                )
-
-        user_input = user_input or {}
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_IP_ADDRESS, default=user_input.get(CONF_IP_ADDRESS)
-                    ): TextSelector(),
-                }
+                {vol.Required(CONF_IP_ADDRESS): TextSelector()}
             ),
             errors=errors,
         )
 
-    async def async_step_zeroconf(self, discovery_info: Any) -> ConfigFlowResult:
-        """Handle zeroconf discovery."""
+    async def async_step_authorize(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Step 2 – press the button on the device, then submit to obtain a token."""
+        errors: dict[str, str] = {}
 
+        if user_input is not None or not onboarding.async_is_onboarded(self.hass):
+            try:
+                token = await HomeWizardEnergyV2.create_user(
+                    host=self.ip_address,
+                    name=_USER_NAME,
+                    session=async_get_clientsession(self.hass),
+                )
+            except CreationNotEnabledError:
+                errors["base"] = "button_not_pressed"
+            except RequestError:
+                errors["base"] = "network_error"
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOGGER.exception("Unexpected exception during authorization")
+                raise AbortFlow("unknown_error")
+            else:
+                return await self._async_finish_setup(token)
+
+        return self.async_show_form(
+            step_id="authorize",
+            description_placeholders={CONF_IP_ADDRESS: self.ip_address},
+            errors=errors,
+        )
+
+    # ------------------------------------------------------------------
+    # Zeroconf (mDNS) discovery flow
+    # ------------------------------------------------------------------
+
+    async def async_step_zeroconf(self, discovery_info: Any) -> ConfigFlowResult:
+        """Handle Zeroconf discovery."""
         if (
             CONF_PRODUCT_NAME not in discovery_info.properties
             or CONF_PRODUCT_TYPE not in discovery_info.properties
@@ -90,8 +104,6 @@ class HomeWizardConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="invalid_discovery_parameters")
 
         product_type = discovery_info.properties[CONF_PRODUCT_TYPE]
-
-        # Only support P1 meter
         if product_type not in SUPPORTED_PRODUCT_TYPES:
             return self.async_abort(reason="device_not_supported")
 
@@ -107,132 +119,106 @@ class HomeWizardConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return await self.async_step_discovery_confirm()
 
-    async def async_step_dhcp(self, discovery_info: Any) -> ConfigFlowResult:
-        """Handle dhcp discovery to update existing entries.
-
-        This flow is triggered only by DHCP discovery of known devices.
-        """
-        try:
-            device = await async_try_connect(self.hass, discovery_info.ip)
-        except RecoverableError as ex:
-            LOGGER.debug("DHCP discovery connection check failed: %s", ex)
-            return self.async_abort(reason="unknown_error")
-
-        # Only support P1 meter
-        if device.product_type not in SUPPORTED_PRODUCT_TYPES:
-            return self.async_abort(reason="device_not_supported")
-
-        if device.serial is None:
-            return self.async_abort(reason="unknown_error")
-
-        await self.async_set_unique_id(
-            f"{DOMAIN}_{device.product_type}_{device.serial}"
-        )
-
-        self._abort_if_unique_id_configured(
-            updates={CONF_IP_ADDRESS: discovery_info.ip}
-        )
-
-        # This situation should never happen, as Home Assistant will only
-        # send updates for existing entries. In case it does, we'll just
-        # abort the flow with an unknown error.
-        return self.async_abort(reason="unknown_error")
-
     async def async_step_discovery_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Confirm discovery."""
-        ip_address = self.ip_address
-        product_name = self.product_name
-        product_type = self.product_type
-        serial = self.serial
-
+        """Confirm discovered device, then request button press to authorize."""
         if (
-            ip_address is None
-            or product_name is None
-            or product_type is None
-            or serial is None
+            self.ip_address is None
+            or self.product_name is None
+            or self.product_type is None
+            or self.serial is None
         ):
             return self.async_abort(reason="unknown_error")
 
-        errors: dict[str, str] | None = None
+        self.context["title_placeholders"] = {"name": self.product_name}
+
         if user_input is not None or not onboarding.async_is_onboarded(self.hass):
-            try:
-                await async_try_connect(self.hass, ip_address)
-            except RecoverableError as ex:
-                LOGGER.debug("Discovery confirmation connection check failed: %s", ex)
-                errors = {"base": ex.error_code}
-            else:
-                return self.async_create_entry(
-                    title=product_name,
-                    data={CONF_IP_ADDRESS: ip_address},
-                )
+            # User confirmed – move to the authorization (button press) step.
+            return await self.async_step_authorize()
 
         self._set_confirm_only()
-
-        # P1 meter doesn't need serial in name as users generally only have one
-        self.context["title_placeholders"] = {"name": product_name}
-
         return self.async_show_form(
             step_id="discovery_confirm",
             description_placeholders={
-                CONF_PRODUCT_TYPE: product_type,
-                CONF_SERIAL: serial,
-                CONF_IP_ADDRESS: ip_address,
+                CONF_PRODUCT_TYPE: self.product_type,
+                CONF_SERIAL: self.serial,
+                CONF_IP_ADDRESS: self.ip_address,
             },
-            errors=errors,
         )
 
-    async def async_step_reauth(
-        self, entry_data: Mapping[str, Any]
-    ) -> ConfigFlowResult:
-        """Handle re-auth if API was disabled."""
-        self.ip_address = entry_data[CONF_IP_ADDRESS]
-        return await self.async_step_reauth_enable_api()
+    # ------------------------------------------------------------------
+    # DHCP discovery – only updates the IP for existing entries
+    # ------------------------------------------------------------------
 
-    async def async_step_reauth_enable_api(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Confirm reauth dialog, where user is asked to re-enable the HomeWizard API."""
-        errors: dict[str, str] | None = None
-        if user_input is not None:
-            reauth_entry = self._get_reauth_entry()
-            try:
-                await async_try_connect(self.hass, reauth_entry.data[CONF_IP_ADDRESS])
-            except RecoverableError as ex:
-                LOGGER.debug("Reauth connection check failed: %s", ex)
-                errors = {"base": ex.error_code}
-            else:
-                await self.hass.config_entries.async_reload(reauth_entry.entry_id)
-                return self.async_abort(reason="reauth_enable_api_successful")
+    async def async_step_dhcp(self, discovery_info: Any) -> ConfigFlowResult:
+        """Update the IP address of an already-configured device."""
+        session = async_get_clientsession(self.hass)
 
-        return self.async_show_form(step_id="reauth_enable_api", errors=errors)
+        # We need a token to call the device API; at this point we don't have
+        # one (DHCP fires before configuration).  Query the device to get its
+        # serial so we can locate the existing entry.
+        #
+        # v2: try to get device info. Without a token we can't, so just try to
+        # match by serial embedded in the unique_id if we have a discovered one.
+        # Fall back to updating all entries for this host if we can't verify.
+        ip = discovery_info.ip
+
+        # Iterate existing entries; update IP if we find a matching one.
+        for entry in self._async_current_entries():
+            if entry.data.get(CONF_IP_ADDRESS) != ip:
+                # Try to verify this is the same device by connecting with its token.
+                try:
+                    api = HomeWizardEnergyV2(
+                        host=ip,
+                        token=entry.data.get(CONF_TOKEN, ""),
+                        session=session,
+                    )
+                    device = await api.get_device()
+                    entry_serial = entry.unique_id or ""
+                    if f"{DOMAIN}_{device.product_type}_{device.serial}" in entry_serial:
+                        self._abort_if_unique_id_configured(
+                            updates={CONF_IP_ADDRESS: ip}
+                        )
+                except Exception:  # noqa: BLE001
+                    pass
+
+        return self.async_abort(reason="unknown_error")
+
+    # ------------------------------------------------------------------
+    # Reconfigure – change the IP address (token stays)
+    # ------------------------------------------------------------------
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle reconfiguration of the integration."""
+        """Allow the user to update the device's IP address."""
         errors: dict[str, str] = {}
         reconfigure_entry = self._get_reconfigure_entry()
 
-        if user_input:
+        if user_input is not None:
+            ip = user_input[CONF_IP_ADDRESS].strip()
             try:
-                device_info = await async_try_connect(self.hass, user_input[CONF_IP_ADDRESS])
-            except RecoverableError as ex:
-                LOGGER.debug("Reconfigure connection check failed: %s", ex)
-                errors = {"base": ex.error_code}
+                api = HomeWizardEnergyV2(
+                    host=ip,
+                    token=reconfigure_entry.data[CONF_TOKEN],
+                    session=async_get_clientsession(self.hass),
+                )
+                device = await api.get_device()
+            except AuthError:
+                errors["base"] = "invalid_token"
+            except RequestError:
+                errors["base"] = "network_error"
             else:
-                if device_info.serial is None:
-                    return self.async_abort(reason="unknown_error")
-
                 await self.async_set_unique_id(
-                    f"{DOMAIN}_{device_info.product_type}_{device_info.serial}"
+                    f"{DOMAIN}_{device.product_type}_{device.serial}"
                 )
                 self._abort_if_unique_id_mismatch(reason="wrong_device")
                 return self.async_update_reload_and_abort(
-                    self._get_reconfigure_entry(),
-                    data_updates=user_input,
+                    reconfigure_entry,
+                    data_updates={CONF_IP_ADDRESS: ip},
                 )
+
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=vol.Schema(
@@ -240,60 +226,98 @@ class HomeWizardConfigFlow(ConfigFlow, domain=DOMAIN):
                     vol.Required(
                         CONF_IP_ADDRESS,
                         default=reconfigure_entry.data.get(CONF_IP_ADDRESS),
-                    ): TextSelector(),
+                    ): TextSelector()
                 }
             ),
-            description_placeholders={
-                "title": reconfigure_entry.title,
-            },
+            description_placeholders={"title": reconfigure_entry.title},
             errors=errors,
         )
 
+    # ------------------------------------------------------------------
+    # Re-auth – token was revoked; go through button-press again
+    # ------------------------------------------------------------------
 
-async def async_try_connect(
-    hass: HomeAssistant,
-    ip_address: str,
-    clientsession: ClientSession | None = None,
-) -> Device:
-    """Try to connect.
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any]
+    ) -> ConfigFlowResult:
+        """Handle re-authentication when the stored token is no longer valid."""
+        self.ip_address = entry_data[CONF_IP_ADDRESS]
+        return await self.async_step_reauth_confirm()
 
-    Make connection with device to test the connection
-    and to get info for unique_id.
-    """
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Press button again to obtain a fresh token."""
+        errors: dict[str, str] = {}
 
-    energy_api = HomeWizardEnergyV1(
-        ip_address,
-        clientsession=clientsession or async_get_clientsession(hass),
-    )
+        if user_input is not None:
+            try:
+                token = await HomeWizardEnergyV2.create_user(
+                    host=self.ip_address,
+                    name=_USER_NAME,
+                    session=async_get_clientsession(self.hass),
+                )
+            except CreationNotEnabledError:
+                errors["base"] = "button_not_pressed"
+            except RequestError:
+                errors["base"] = "network_error"
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOGGER.exception("Unexpected exception during re-auth")
+                raise AbortFlow("unknown_error")
+            else:
+                reauth_entry = self._get_reauth_entry()
+                return self.async_update_reload_and_abort(
+                    reauth_entry,
+                    data_updates={CONF_TOKEN: token},
+                    reason="reauth_successful",
+                )
 
-    try:
-        return await energy_api.device()
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            description_placeholders={CONF_IP_ADDRESS: self.ip_address},
+            errors=errors,
+        )
 
-    except DisabledError as ex:
-        raise RecoverableError(
-            "API disabled, API must be enabled in the app", "api_not_enabled"
-        ) from ex
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
 
-    except RequestError as ex:
-        raise RecoverableError(
-            "Device unreachable or unexpected response", "network_error"
-        ) from ex
+    async def _async_finish_setup(self, token: str) -> ConfigFlowResult:
+        """Fetch device info, set unique_id and create the config entry."""
+        session = async_get_clientsession(self.hass)
+        try:
+            api = HomeWizardEnergyV2(
+                host=self.ip_address,
+                token=token,
+                session=session,
+            )
+            device = await api.get_device()
+        except (AuthError, RequestError) as err:
+            LOGGER.error("Could not fetch device info after authorizing: %s", err)
+            raise AbortFlow("unknown_error") from err
 
-    except asyncio.CancelledError:
-        raise
+        if device.product_type not in SUPPORTED_PRODUCT_TYPES:
+            return self.async_abort(reason="device_not_supported")
 
-    except Exception as ex:
-        LOGGER.exception("Unexpected exception")
-        raise AbortFlow("unknown_error") from ex
+        await self.async_set_unique_id(
+            f"{DOMAIN}_{device.product_type}_{device.serial}"
+        )
+        self._abort_if_unique_id_configured()
 
-    finally:
-        await energy_api.close()
+        return self.async_create_entry(
+            title=device.product_name,
+            data={
+                CONF_IP_ADDRESS: self.ip_address,
+                CONF_TOKEN: token,
+            },
+        )
 
 
 class RecoverableError(HomeAssistantError):
-    """Raised when a connection has been failed but can be retried."""
+    """Raised when a connection attempt failed but can be retried."""
 
     def __init__(self, message: str, error_code: str) -> None:
-        """Init RecoverableError."""
         super().__init__(message)
         self.error_code = error_code

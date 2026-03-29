@@ -1,42 +1,37 @@
-"""The Homewizard integration."""
+"""The HomeWizard Instant integration."""
 
-from homewizard_energy import HomeWizardEnergyV1
+from __future__ import annotations
 
 from homeassistant.const import CONF_IP_ADDRESS
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import PLATFORMS
-from .coordinator import HomeWizardConfigEntry, HWEnergyDeviceUpdateCoordinator
+from .api import HomeWizardEnergyV2
+from .const import CONF_TOKEN, PLATFORMS
+from .coordinator import HomeWizardConfigEntry, HWInstantCoordinator
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: HomeWizardConfigEntry) -> bool:
-    """Set up Homewizard from a config entry."""
-
-    api = HomeWizardEnergyV1(
-        entry.data[CONF_IP_ADDRESS],
-        clientsession=async_get_clientsession(hass),
+    """Set up HomeWizard Instant from a config entry."""
+    api = HomeWizardEnergyV2(
+        host=entry.data[CONF_IP_ADDRESS],
+        token=entry.data[CONF_TOKEN],
+        session=async_get_clientsession(hass),
     )
 
-    coordinator = HWEnergyDeviceUpdateCoordinator(hass, entry, api)
+    coordinator = HWInstantCoordinator(hass, entry, api)
     try:
         await coordinator.async_config_entry_first_refresh()
-
     except ConfigEntryNotReady:
-        await coordinator.api.close()
-
-        if coordinator.api_disabled:
-            entry.async_start_reauth(hass)
-
         raise
 
     entry.runtime_data = coordinator
 
-    # Finalize
-    entry.async_on_unload(coordinator.api.close)
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Cancel the WebSocket background task when the entry is unloaded.
+    entry.async_on_unload(coordinator._cancel_ws_task)
 
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
